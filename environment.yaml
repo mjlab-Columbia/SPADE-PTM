@@ -1,0 +1,12 @@
+name: peak_picking
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - pip
+  - click
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - numpy
+  - pandas
