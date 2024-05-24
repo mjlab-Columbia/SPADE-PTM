@@ -8,6 +8,8 @@ import os
 import sqlite3
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
+import click
+import warnings
 
 class SQLiteMatchingManager:
     """Class to manage the SQLite database containing the matched table."""
@@ -46,7 +48,9 @@ class SQLiteMatchingManager:
                 return cell
 
         # Apply the function to each element in the DataFrame
-        self.match_table = self.match_table.applymap(convert_string_to_list)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            self.match_table = self.match_table.applymap(convert_string_to_list)
     
     def save_to_SQL(self, df, table_name):
         """Save a DataFrame to a SQLite database.
@@ -66,8 +70,10 @@ class SQLiteMatchingManager:
                 return cell
             else:
                 return str(cell)
-            
-        df = df.applymap(convert_lists_to_string)
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            df = df.applymap(convert_lists_to_string)
 
         # Register adapters for other non-supported types if needed
         sqlite3.register_adapter(np.int64, lambda val: int(val))
@@ -257,39 +263,60 @@ class matchTableEditor:
         self.match_table = self.match_table[self.match_table.columns.drop(list(self.match_table.filter(regex='^peak', axis=1))).tolist() + self.match_table.filter(regex='^peak', axis=1).columns.tolist()]
 
 
-#1. Load match/alignment data, uniprot ref, and MW standard and other inputs
-DB = SQLiteMatchingManager('20240409_PeakMatching_Package/sample_outputs/DataRepository_Test.db')
-DB.load_dataframes(peak_table_name='peak_table', match_table_name='alignment_table')
-match_table= DB.match_table.copy()
-peak_table = DB.peak_table.copy()
+@click.command()
+@click.option('--sql_db', '-s', help='The path to the SQLite database file.', required=True)
+@click.option('--peak_table_name', '-p', default='peak_table', help='The name of the table containing the peak table.')
+@click.option('--alignment_table_name', '-a', default='alignment_table', help='The name of the table containing the matched table.')
+@click.option('--fold_change_threshold', '-t', default=1, help='The fold change threshold.', type=float)
+@click.option('--uniprot', '-u', default='sample_input/uniprotk_9606_2023_09_05.tsv', help='The path to the Uniprot data.')
+@click.option('--sec_mw', '-m', default='sample_input/SEC_MW_input_hekhct.txt', help='The path to the SEC MW input data.')
+@click.option('--first_fraction', '-f', default=8, help='The first fraction number.', type=int)
+@click.option('--mass_factor', '-mf', default=1.5, help='The mass factor.', type=float)
+@click.option('--output_table_name', '-o', default='alignment_table_modified', help='The name of the output table.')
+def main(sql_db, peak_table_name, alignment_table_name, fold_change_threshold, uniprot, sec_mw, first_fraction, mass_factor, output_table_name):
+    """Main function to edit the alignment/matched table."""
 
-uniprot = pd.read_csv("databases/uniprotk_9606_2023_09_05.tsv", sep='\t')
+    #1. Load match/alignment data, uniprot ref, and MW standard and other inputs
+    click.echo('Loading data...')
+    DB = SQLiteMatchingManager(sql_db)
+    DB.load_dataframes(peak_table_name, alignment_table_name)
+    match_table= DB.match_table.copy()
+    peak_table = DB.peak_table.copy()
 
-mw_standard = pd.read_csv('data/20230816_proteinGroup/SEC_MW_input_hekhct.txt', sep='\t')
-first_fraction = 8
-mass_factor = 1
+    uniprot = pd.read_csv(uniprot, sep='\t')
 
-#2. Edit match/alignment data
-match_table_editor = matchTableEditor(match_table, peak_table)
+    mw_standard = pd.read_csv(sec_mw, sep='\t')
 
-#3. Find the mean of the peak apexes of the aligned peaks
-match_table_editor.add_mean_apex()
+    #2. Edit match/alignment data
+    click.echo('Editing data:')
+    match_table_editor = matchTableEditor(match_table, peak_table)
 
-#4. Find the fold changes of the peak heights, and evaluate them based on a cutoff.
-match_table_editor.add_fold_changes()
-match_table_editor.add_fold_change_eval(threshold=1)
+    #3. Find the mean of the peak apexes of the aligned peaks
+    click.echo('Adding mean peak apex...')
+    match_table_editor.add_mean_apex()
 
-#5. Add monomer mass and estimated molecular weight - evaluate the region of the peaks apexes. 
-match_table_editor.add_monomer_MW(uniprot)
-match_table_editor.add_estimated_MW(mw_standard, first_fraction, plot=True, plot_filename='20240409_PeakMatching_Package/sample_outputs/MW_Model_Plot_test.pdf')
-match_table_editor.add_region(mass_factor=1.5)
-match_table_editor.classify_col('global')
-match_table_editor.classify_col('phospho')
+    #4. Find the fold changes of the peak heights, and evaluate them based on a cutoff.
+    click.echo('Adding fold changes...')
+    match_table_editor.add_fold_changes()
+    match_table_editor.add_fold_change_eval(threshold=fold_change_threshold)
 
-#6. Add PTM log2fx by summing the peak heights of the PTM peaks
-match_table_editor.add_ptm_log2fx()
-match_table_editor.other_edits()
+    #5. Add monomer mass and estimated molecular weight - evaluate the region of the peaks apexes.
+    click.echo('Adding monomer mass and estimated molecular weight...') 
+    match_table_editor.add_monomer_MW(uniprot)
+    match_table_editor.add_estimated_MW(mw_standard, first_fraction, plot=True, plot_filename=os.path.dirname(sql_db)+'/MW_Model_Plot.pdf')
+    match_table_editor.add_region(mass_factor)
+    match_table_editor.classify_col('global')
+    match_table_editor.classify_col('phospho')
 
-#7. Save updated alignment table to SQL
-DB.save_to_SQL(match_table_editor.match_table.copy(), 'alignment_table_modified')
-DB.close_connection()
+    #6. Add PTM log2fx by summing the peak heights of the PTM peaks
+    click.echo('Adding PTM log2fx...')
+    match_table_editor.add_ptm_log2fx()
+    match_table_editor.other_edits()
+
+    #7. Save updated alignment table to SQL
+    click.echo('Saving data.')
+    DB.save_to_SQL(match_table_editor.match_table.copy(), output_table_name)
+    DB.close_connection()
+
+if __name__ == '__main__':
+    main()

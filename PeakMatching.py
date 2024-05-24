@@ -2,6 +2,7 @@
 NOTE: This script is most efficiently run in its entirety due to multiprocessing."""
 
 #import libraries
+import click
 import pandas as pd
 import numpy as np
 import time
@@ -47,7 +48,9 @@ class SQLitePeakMatchingManager:
                 return cell
             else:
                 return str(cell)
-        df = df.applymap(convert_lists_to_string)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=FutureWarning)
+            df = df.applymap(convert_lists_to_string) #ignore this warning for now
 
         # Register adapters for other non-supported types if needed
         sqlite3.register_adapter(np.int64, lambda val: int(val))
@@ -104,7 +107,7 @@ def replace_ptm_col_values(row, ptm, col):
     else:
         return None
 
-def ptm_matching(input_df, threshold=1):
+def ptm_matching(input_df):
     """Match the global peaks to the ptm peaks and summarize the results.
     In this version, all ptm peaks are tested for matching with all global peaks.
     This function allows for multiple ptm peaks to match a single global peak and vice versa.
@@ -112,7 +115,6 @@ def ptm_matching(input_df, threshold=1):
     
     Args:
         input_df (pd.DataFrame): The DataFrame containing the peak data.
-        threshold (int): The maximum difference in peak apexes allowed for a match (Default: 1).
     
     Returns:
         pd.DataFrame: The DataFrame containing the matched peaks (global and ptm) and their attributes.
@@ -133,7 +135,9 @@ def ptm_matching(input_df, threshold=1):
     #make sure that the all ptm columns are present for each protein replicate.
     for p in ptms:
         if p not in ptm_df['ptm'].unique():
-            ptm_df = pd.concat([ptm_df, skeleton_df.copy().assign(ptm=p)], ignore_index=True)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=FutureWarning)
+                ptm_df = pd.concat([ptm_df, skeleton_df.copy().assign(ptm=p)], ignore_index=True) #ignore this warning for now
 
     #iterate through each ptm df to merge with the global df
     ptm_df_list = [group for _, group in ptm_df.groupby('ptm')]
@@ -165,13 +169,12 @@ def ptm_matching(input_df, threshold=1):
 
 
 ###Condition peak matching functions###
-def path_mean_dist(path, threshold):
+def path_mean_dist(path):
     """Calculate the mean distance of the path from the mean of the path.
     Replace the NaNs with the threshold value.
     
     Args:
         path (np.ndarray): The path to calculate the mean distance of.
-        threshold (int): The value to replace NaNs with.
     
     Returns:
         np.ndarray: The squared mean distance of the path.
@@ -183,17 +186,16 @@ def path_mean_dist(path, threshold):
     path_dist_sq = np.square(path_dist_wThreshold)
     return path_dist_sq
 
-def path_score(path, threshold):
+def path_score(path):
     """Calculate the score of the path based on the mean distance & variance of the path.
     
     Args:
         path (np.ndarray): The path to calculate the score of.
-        threshold (int): The value to replace NaNs with.
     
     Returns:
         float: The score of the path.
     """
-    path_dist = path_mean_dist(path, threshold)
+    path_dist = path_mean_dist(path) 
     path_var = np.sum(path_dist) / len(path_dist)
     path_score = 1 / (path_var + 1)
     return path_score
@@ -221,7 +223,7 @@ def fill_values(index_combinations, fill_df, fill_column='peak_apex'):
 
     return index_combinations
 
-def peak_alignment(peak_df, threshold):
+def peak_alignment(peak_df): 
     """Align the peaks based on the peak apexes and return the aligned paths.
     Alignment is performed through the following steps:
     (1) Create a skeleton dataframe to ensure that all protein replicates/conditions are present in the final dataframe.
@@ -232,7 +234,6 @@ def peak_alignment(peak_df, threshold):
     
     Args:
         peak_df (pd.DataFrame): The DataFrame containing the peak data.
-        threshold (int): The value to replace NaNs with.
     
     Returns:
         np.ndarray: The array of index paths containing the peak alignments.
@@ -245,7 +246,9 @@ def peak_alignment(peak_df, threshold):
     #ensures all conditions are matched
     for c in conditions:
         if c not in peak_df['condition'].unique():
-            peak_df = pd.concat([peak_df, skeleton_df.copy().assign(condition=c)], ignore_index=True)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=FutureWarning)
+                peak_df = pd.concat([peak_df, skeleton_df.copy().assign(condition=c)], ignore_index=True) #edit to ignore this warning for now
     
     #create a list of indexes, grouped by condition for creating combinations and add NaN to the end of each list
     index_lists = peak_df.groupby('condition')['index'].apply(list).tolist()
@@ -259,7 +262,7 @@ def peak_alignment(peak_df, threshold):
 
     #iterate through the peak_combinations to find the top scoring path
     for i in range(0, len(peak_combinations)):
-        path_scores = np.apply_along_axis(path_score, 1, peak_combinations, threshold)
+        path_scores = np.apply_along_axis(path_score, 1, peak_combinations) 
         top_combination_index = np.where(path_scores == path_scores.max())[0][0]
         top_combination_value = peak_combinations[top_combination_index]
 
@@ -274,19 +277,18 @@ def peak_alignment(peak_df, threshold):
 
     return np.array(result_paths)
 
-def condition_matching(peak_df, threshold, group_columns):
+def condition_matching(peak_df, group_columns): #
     """This function is for organizing the the matched peaks into a single dataframe.
     
     Args:
         peak_df (pd.DataFrame): The DataFrame containing the peak data.
-        threshold (int): The value to replace NaNs with.
         group_columns (list): The list of columns to group by.
     
     Returns:
         pd.DataFrame: The DataFrame containing the matched peaks and their attributes.
     """
     #perform peak alignment
-    index_alignment = peak_alignment(peak_df, threshold)
+    index_alignment = peak_alignment(peak_df) #
 
     #get non-group columns and create the output dataframe
     non_group_columns = peak_df.columns.difference(group_columns).to_list()
@@ -302,35 +304,7 @@ def condition_matching(peak_df, threshold, group_columns):
     return output_df
 
 
-#1. Import the peak_table and define global variables
-database_filename = '20240409_PeakMatching_Package/sample_outputs/DataRepository_Test.db'
-manager = SQLitePeakMatchingManager(database_filename, 'peak_table')
-
-prot_rep_peak_df_list = manager.prot_rep_peak_df_list.copy()
-peak_table = manager.peak_table.copy()
-prot_rep = manager.prot_rep.copy()
-group_cols = manager.group_cols.copy()
-conditions = manager.conditions.copy()
-ptms = manager.ptms.copy()
-
-manager.close_connection()
-
-
-#2. Examples of how to test/subset this script.
-#this part should be run line by line and for testing purposes.
-test_subsample = False
-if test_subsample:
-    #run the script on a subset like this:
-    prot_rep_peak_df_list = prot_rep_peak_df_list[0:100]
-
-    #or test specific protein matching like this:
-    peak_table_i = peak_table.copy()[peak_table['prot_rep'] == 'A0A024R326_rep01'].reset_index(drop=True) #A0A024R326_rep01, O95104_rep01, A0A087WXA6_rep02, A0A024R4E5_rep03, A0A024R3Z1_rep01, A0A7I2V5M3_rep01
-    ptm_mod_table_test = ptm_matching(peak_table_i)
-    condition_table_test = condition_matching(ptm_mod_table_test.reset_index(drop=True).reset_index(), 1, group_cols)
-    condition_table_test[['protein_id', 'genes', 'replicate', 'condition', 'peak_apex', 'peak_id', 'peak_id_ptm', 'cluster']]
-
-
-#3. Perform matching.alignment on the enrire dataset
+###Organize matching functions###
 def matching_i(peak_table_i):
     """Perform the peak matching on the input peak table.
     This function is to be used with the multiprocessing module.
@@ -341,31 +315,56 @@ def matching_i(peak_table_i):
     Returns:
         pd.DataFrame: The DataFrame containing the matched peaks and their attributes.
     """
-    threshold=3
+
     input_df = peak_table_i.copy()
-    ptm_mod_table = ptm_matching(input_df, threshold)
+    ptm_mod_table = ptm_matching(input_df)
     
     if ptm_mod_table is None:
         return None
     else:
-        return condition_matching(ptm_mod_table.reset_index(drop=True).reset_index(), threshold, group_cols)
+        return condition_matching(ptm_mod_table.reset_index(drop=True).reset_index(), group_cols)
 
-if __name__ == '__main__':
+
+#reorganize script to run with click
+@click.command()
+@click.option('--sql_db', '-s', required=True, help='SQLite database file for input and output')
+@click.option('--cutoff', '-c', required=True, type=int, help='The maximum difference in peak apexes allowed for a match.')
+@click.option('--peak_table_name', '-p', default='peak_table', help='The name of the table containing the peak data.')
+@click.option('--align_table_name', '-a', default='alignment_table', help='The name of the table to save the alignment data.')
+def main(sql_db, cutoff, peak_table_name, align_table_name):
+    """This function is the main function for the peak matching and alignment script.
+    It reads in the peak table from the SQLite database, performs the peak matching and alignment, and saves the results back to the database.
+    """
     t0 = time.time()
-    print(t0)
-    with multiprocessing.Pool(os.cpu_count()-1) as p:
-        pool_result = p.map(matching_i, prot_rep_peak_df_list)
-    clustered_global_intensity_table = pd.concat(pool_result, ignore_index=True).reset_index(drop=True)
-    print(time.time() - t0)
+    #import the peak_table and define global variables
+    click.echo('Importing peak table and defining global variables...')
+    manager = SQLitePeakMatchingManager(sql_db, peak_table_name)
+    prot_rep_peak_df_list = manager.prot_rep_peak_df_list.copy()
 
-    #move all columns with 'peak' to the end using regex, and drop extra columns
+    global peak_table, prot_rep, group_cols, conditions, ptms, threshold
+    peak_table, prot_rep, group_cols, conditions, ptms, threshold = manager.peak_table.copy(), manager.prot_rep.copy(), manager.group_cols.copy(), manager.conditions.copy(), manager.ptms.copy(), cutoff
+    manager.close_connection()
+
+    #perform peak matching and alignment
+    click.echo('Performing peak matching and alignment...')
+    mapped_result = map(matching_i, prot_rep_peak_df_list)
+    clustered_global_intensity_table = pd.concat(mapped_result, ignore_index=True).reset_index(drop=True)
+
+    #move all columns with 'peak' to the end using regex, and drop a few columns
+    click.echo('Reorganizing columns...')
     clustered_global_intensity_table = clustered_global_intensity_table[clustered_global_intensity_table.columns.drop(list(clustered_global_intensity_table.filter(regex='peak'))).tolist() + clustered_global_intensity_table.filter(regex='peak').columns.tolist()]
     clustered_global_intensity_table = clustered_global_intensity_table.drop(columns=['index', 'prot_rep'], axis=1).reset_index(drop=True)
     
-    #save to csv
-    #clustered_global_intensity_table.to_pickle('output_files/20231106_hekhct/Matched_Table.pkl')
-    manager = SQLitePeakMatchingManager(database_filename, 'peak_table')
-    manager.save_to_SQL(clustered_global_intensity_table, 'alignment_table')
+    #save results to SQLite database
+    click.echo('Saving results to SQLite database...')
+    manager = SQLitePeakMatchingManager(sql_db, peak_table_name)
+    manager.save_to_SQL(clustered_global_intensity_table, align_table_name)
+    manager.close_connection()
 
-    #save to SQL
-    print(time.time() - t0)
+    #print runtime in minutes and seconds
+    t1 = time.time()
+    click.echo(f'Peak matching and alignment completed in {(t1-t0)/60:.2f} minutes.')
+
+
+if __name__ == '__main__':
+    main()
