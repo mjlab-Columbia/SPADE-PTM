@@ -2,6 +2,7 @@
 More specifically, this script was based on the output from Spectromine for TMT-18 labelled data."""
 
 #import libraries
+import click
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -9,6 +10,10 @@ from sklearn.linear_model import LinearRegression
 from scipy.signal import filtfilt 
 import matplotlib.pyplot as plt
 
+
+
+
+#Functions
 class SEC_Data_Manager:
     """A class for managing SEC-MS data. This class contains functions for reshaping, normalizing, and exporting dataframes."""
 
@@ -23,12 +28,31 @@ class SEC_Data_Manager:
             sec_table (pd.DataFrame): A dataframe containing the SEC molecular weight calibration data. Currently only used for exporting to SECAT. Default is None.
         """
 
-        self.input_df_list = input_df_list
-        self.df_list = input_df_list
-        self.labelling_annotation = labelling_annotation
-        self.mix_norm_annotation = mix_norm_annotation
-        self.uniprot_gene_table = uniprot_gene_table
-        self.sec_table = sec_table
+        def read_input_files(input_files):
+            """Read the input CSV files and return a list of dataframes.
+            
+            Args:
+                input_files (list): A list of input CSV files.
+            
+            Returns:
+                list: A list of dataframes containing the input data.
+            """
+            input_df_list = []
+            for file in input_files:
+                input_df = pd.read_csv(file)
+
+                if 'PP.Phospho (STY)' in input_df.columns:
+                    input_df = input_df[~input_df['PP.Phospho (STY)'].isna()]
+
+                input_df_list.append(input_df)
+            return input_df_list
+
+        self.input_df_list = read_input_files(input_df_list)
+        self.df_list = self.input_df_list
+        self.labelling_annotation = pd.read_csv(labelling_annotation, delimiter = "\t")
+        self.mix_norm_annotation = pd.read_csv(mix_norm_annotation, delimiter = "\t")
+        self.uniprot_gene_table = pd.read_csv(uniprot_gene_table)
+        self.sec_table = pd.read_csv(sec_table) if sec_table is not None else None
 
     def reshape_tmt_df(self, id_col_list, tmt_col_list):
         """Reshape the input dataframes based on the column nomenclature and labelling annotation.
@@ -250,13 +274,11 @@ class SEC_Data_Manager:
             else:
                 constant = 'ptm'
             for c in np.unique(result_df[constant]):
-                print(c)
                 result_df_c = result_df[result_df[constant] == c]
                 
                 #iterate through each replicate
                 replicates = np.unique(result_df['replicate'])
                 for r in replicates:
-                    print(r)
                     result_df_cr = result_df_c[result_df_c['replicate'] == r]
 
                     #iterate through each category (condition or PTM) to normalize
@@ -264,7 +286,6 @@ class SEC_Data_Manager:
                     for i in range(0, len(categories)-1):
                         std_cond = categories[i]
                         norm_cond = categories[i+1]
-                        print(norm_cond)
 
                         #get the median intensity for the standard and normalization condition
                         std_df = result_df_cr[result_df_cr[category] == std_cond]
@@ -275,7 +296,7 @@ class SEC_Data_Manager:
 
                         #normalize the normalization condition to the standard condition
                         result_df_cr.loc[norm_df.index, 'intensity'] = (norm_df['intensity'] * (std_median_intensity/norm_median_intensity))
-                        print(std_median_intensity/norm_median_intensity)
+                        #print(c + '-' + r + ' ' + ' ' + norm_cond + 'norm factor: ' + str(round(std_median_intensity/norm_median_intensity), 2))
                     
                     result_df_c.loc[result_df_cr.index, 'intensity'] = result_df_cr['intensity']
 
@@ -362,7 +383,7 @@ class SEC_Data_Manager:
             long_df_norm = long_df_norm[long_df_norm['intensity'] != 0].reset_index(drop=True)
             self.df = long_df_norm
 
-    def add_gene_names(self, gene_name_df, id_col='protein_id', gene_col='Gene.Names', save_missing=False):
+    def add_gene_names(self, id_col='protein_id', gene_col='Gene.Names', save_missing=False):
         """Add gene names to the dataframe based on the mapping between Uniprot IDs and gene names.
 
         Args:
@@ -375,6 +396,7 @@ class SEC_Data_Manager:
             None (Updates the df attribute of the SEC_Data_Manager object.)
         """
         output_df = self.df.copy()
+        gene_name_df = self.uniprot_gene_table.copy()
 
         #get complimentary gene names and insert column next to id_col
         gene_values = output_df.merge(gene_name_df, left_on=id_col, right_on='Entry', how='left')[gene_col]
@@ -507,75 +529,88 @@ class SEC_Data_Manager:
         secat_sec_table['sec_mw'] = np.power(10, model.predict(sec_fraction_original))
         
         secat_sec_table.to_csv(sec_filename, index=False)
-        
 
-##input files##
-GL_tmt_df = pd.read_csv("data/20231106_hekhct/20230815_143456_20230815_hekhct_global_3reps_PepProtPSM_Report_20230815_161615.csv")
-PTM_tmt_df = pd.read_csv("data/20231106_hekhct/20231106_110653_20230815_hekhct_phospho_2reps_PSM_Report_20231106_115228.csv")
-PTM_tmt_df_filtered = PTM_tmt_df[~PTM_tmt_df['PP.Phospho (STY)'].isna()]
-
-tmt_info = pd.read_csv("data/20230811_proteinGroup/TMTinfo_HEKHCT_TMT18_3reps_20230814.txt", delimiter = "\t")
-tmt_mix_info = pd.read_csv("data/20230811_proteinGroup/TMTmixOverlap_HEKHCT_TMT18_3reps_20231025.txt", delimiter = "\t")
-
-human_uniprot_gene = pd.read_csv('databases/uniprotIDtoGENE_human_allGenes_20230719.csv')
-
-mw_hekhct = pd.read_csv('data/20231106_hekhct/SEC_MW_input_hekhct.txt', sep='\t')
 
 ##Begin data processing##
+#click command line interface
+@click.command()
+@click.option('--input_files', '-i', multiple=True, default=['sample_input/hekhct_global_2reps_20230815.csv', 'sample_input/hekhct_phospho_2reps_20231106.csv'], help='The input file(s) containing the SEC-MS data. Default is from sample data.')
+@click.option('--labelling_annotation', '-l', default='sample_input/TMTinfo_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The labelling annotation file for the SEC-MS data.')
+@click.option('--mix_norm_annotation', '-m', default='sample_input/TMTmixOverlap_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The mix normalization annotation file for the SEC-MS data.')
+@click.option('--uniprot_gene_table', '-u', default='sample_input/uniprotIDtoGENE_human_allGenes_20230719.csv', type=click.Path(exists=True), help='The Uniprot ID to gene name mapping table.')
+@click.option('--sec_table', '-s', default='sample_input/SEC_MW_input_hekhct.txt', type=click.Path(exists=True), help='The SEC molecular weight calibration table.')
+@click.option('--output_sql', '-o', required=True, help='The output file for the processed SEC-MS data.')
+@click.option('--output_csv', '-c', default=None, help='The output file for the processed SEC-MS data.')
+@click.option('--output_intensity', '-int', default=None, help='The output file for the intensity table compatible with SECAT.')
+@click.option('--output_sec', '-sec', default=None, help='The output file for the SEC table compatible with SECAT.')
+@click.option('--fraction_col', '-f', default='Fraction', help='The column name that contains the fraction information.')
+@click.option('--first_fraction', '-ff', default=0, help='The first fraction number (often SEC fractions are renumbered between standard and MS analysis).')
+@click.option('--combination_factor', '-cf', default=1, help='The factor to combine fractions (e.g. 2 for combining each two fractions).')
+@click.option('--plot_model', '-p', default=False, help='A boolean indicating whether to plot the molecular weight calibration model.')
+def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model):
+    """Main function to perform SEC-MS data preprocessing."""
 
-#1. Create SEC_Data_Manager object - an object that contains all the dataframes and information
-data_manager = SEC_Data_Manager([GL_tmt_df, PTM_tmt_df_filtered], 
-                                tmt_info, 
-                                tmt_mix_info, 
-                                human_uniprot_gene, 
-                                mw_hekhct)
+    #1. Create SEC_Data_Manager object - an object that contains all the dataframes and information
+    click.echo('Creating SEC_Data_Manager object...')
+    data_manager = SEC_Data_Manager(input_files, 
+                                    labelling_annotation, 
+                                    mix_norm_annotation, 
+                                    uniprot_gene_table, 
+                                    sec_table)
 
-#2. Reshape dataframe based on input column nomenclature 
-data_manager.reshape_tmt_df([['R.FileName', 'PG.UniprotIds'], 
-                             ['R.FileName', 'PG.UniprotIds', 'PEP.StrippedSequence']], 
-                             ['PG.TMT18_', 'PEP.TMT18_'])
+    
+    #2. Reshape dataframe based on input column nomenclature 
+    click.echo('Reshaping TMT data...')
+    data_manager.reshape_tmt_df([['R.FileName', 'PG.UniprotIds'], 
+                                ['R.FileName', 'PG.UniprotIds', 'PEP.StrippedSequence']], 
+                                ['PG.TMT18_', 'PEP.TMT18_'])
 
-#3. Find intersect of protein groups (separated by ';') between datasets & select a single protein ID
-data_manager.prot_id_selection()
+    
+    #3. Find intersect of protein groups (separated by ';') between datasets & select a single protein ID
+    click.echo('Selecting protein IDs...')
+    data_manager.prot_id_selection()
 
-#4. Perform normalization between TMT mixes, collapsing by average of fractions, and median normalize between conditions (or other categorical columns)
-data_manager.mix_normalization()
-data_manager.collapse_on_fraction()
-data_manager.median_normalization('condition')
+    #4. Perform normalization between TMT mixes, collapsing by average of fractions, and median normalize between conditions (or other categorical columns)
+    click.echo('Normalizing intensities...')
+    data_manager.mix_normalization()
+    data_manager.collapse_on_fraction()
+    data_manager.median_normalization('condition')
 
-#5. Combine all data into a single dataframe
-data_manager.combine_df_list(two_rep_mode=True)
+    #5. Combine all data into a single dataframe
+    click.echo('Combining data...')
+    data_manager.combine_df_list() #two_rep_mode=True
 
-#6. Add gene names - readding in ensures that all common proteins have the same gene names
-data_manager.add_gene_names(human_uniprot_gene, 
-                            id_col='protein_id', 
-                            gene_col='Gene.Names', 
-                            save_missing=False)
+    #6. Add gene names - readding in ensures that all common proteins have the same gene names
+    click.echo('Adding gene names...')
+    data_manager.add_gene_names(id_col='protein_id', 
+                                gene_col='Gene.Names', 
+                                save_missing=False)
 
-#7. Reorder columns - according to the 'col_order' list
-col_order = ['sample', 'ptm', 'condition', 'replicate', 'protein_id', 'gene', 'peptide_id', 'PTM.ModificationTitle', 'PTM.Multiplicity', 'PTM.SiteAA', 'PTM.SiteLocation', 'PTM.SiteProbability', 'fraction', 'intensity']
-data_manager.reorder_columns(col_order)
+    #7. Reorder columns - according to the 'col_order' list
+    click.echo('Reordering columns...')
+    col_order = ['sample', 'ptm', 'condition', 'replicate', 'protein_id', 'gene', 'peptide_id', 'PTM.ModificationTitle', 'PTM.Multiplicity', 'PTM.SiteAA', 'PTM.SiteLocation', 'PTM.SiteProbability', 'fraction', 'intensity']
+    data_manager.reorder_columns(col_order)
 
-#8. export to sql
-data_manager.export_to_sql('20240409_PeakMatching_Package/sample_outputs/DataRepository_Test.db', 
-                           'initial_intensity_table')
+    #8. export to sql
+    click.echo('Exporting to SQL...')
+    data_manager.export_to_sql(output_sql, 'initial_intensity_table')
 
-#9. export to csv
-data_manager.export_to_csv('20240409_PeakMatching_Package/sample_outputs/initial_intensity_table_test.csv')
 
-#10. export for secat
-data_manager.export_for_secat('20240409_PeakMatching_Package/sample_outputs/test_intensities_SECAT.tsv', 
-                              '20240409_PeakMatching_Package/sample_outputs/test_sec_SECAT.csv', 
-                              fraction_col='Fraction',
-                              first_fraction=8,
-                              combination_factor=1, 
-                              plot_model=True)
+    #9. export to csv
+    if output_csv is not None:
+        click.echo('Exporting to CSV...')
+        data_manager.export_to_csv(output_csv)
 
-#11. Optional: Smoothing intensities (can do this here or later with PeakPicking)
-#Note that the smoothing can be run before exporting to SECAT or as a csv, but other programs may use their own smoothing methods.
-data_manager.apply_smoothing(['sample', 'ptm', 'condition', 'replicate', 'protein_id', 'peptide_id'], 
-                             input_wide=False, 
-                             return_wide=False)
 
-data_manager.export_to_sql('20240409_PeakMatching_Package/sample_outputs/DataRepository_Test.db', 
-                           'smoothed_intensity_table')
+    #10. export for secat
+    if output_intensity is not None and output_sec is not None:
+        click.echo('Exporting for SECAT...')
+        data_manager.export_for_secat(output_intensity, 
+                                    output_sec, 
+                                    fraction_col=fraction_col, 
+                                    first_fraction=first_fraction, 
+                                    combination_factor=combination_factor, 
+                                    plot_model=plot_model)
+
+if __name__ == '__main__':
+    main()

@@ -154,7 +154,7 @@ class SQLitePeakPickingManager:
         self.peak_table = df_expanded
         return df_expanded
 
-    def plot_multiplicity_distributions(self, file_location, file_string_add):
+    def plot_multiplicity_distributions(self):
         """Plot the multiplicity distributions of the peaks - the number of peaks per protein per sample.
 
         Args:
@@ -190,8 +190,7 @@ class SQLitePeakPickingManager:
             plt.ylabel('Protein Frequency')
             plt.title('Peak Multiplicity Histogram: ' + s)
             plt.legend()
-            plt.savefig(file_location + "multiplicity_histogram_" + s + "_" +
-                        file_string_add + ".pdf", bbox_inches='tight', format='pdf')
+            plt.savefig(self.db_folder_path + "/multiplicity_histogram_" + s + ".pdf", bbox_inches='tight', format='pdf')
             plt.close()
 
     def save_to_SQL(self, peak_table_name='peak_table'):
@@ -210,39 +209,46 @@ class SQLitePeakPickingManager:
 
 
 @click.command()
-@click.option("--input_db", type=click.Path(exists=True))
-@click.option("--output", type=click.Path(exists=False))
-def main(input_db, output):
-    # start timer - for testing purposes
+@click.option('--sql_db', '-s', required=True, help='SQLite database file for input and output')
+@click.option('--input_table', '-i', default='initial_intensity_table', help='Input SQLite database table name')
+@click.option('--plot/--no-plot', default=True, help='Plot multiplicity distributions')
+@click.option('--output_table', '-o', default='peak_table', help='Output SQLite database table name')
+def main(sql_db, input_table, output_table, plot):
+    #start timer - for testing purposes
     t0 = time.time()
 
-    # 1. load SQL file
-    DB = SQLitePeakPickingManager(input_db)
-    #
-    # 2. load initial intensity table
-    DB.load_dataframe('initial_intensity_table')
+    #1. load SQL file
+    click.echo(f"Loading SQL file: {sql_db}")
+    DB = SQLitePeakPickingManager(sql_db)
+    
+    #2. load initial intensity table
+    click.echo(f"Loading initial intensity table: {input_table}")
+    DB.load_dataframe(input_table)
 
-    # 3. apply smoothing (optional)
+    #3. apply smoothing
+    click.echo("Applying smoothing...")
     DB.apply_smoothing(save_to_SQL=True)
 
-    # 3. peak picking
+    #4. peak picking
+    click.echo("Applying peak picking...")
     DB.apply_peakpicking()
 
-    # plot multiplicity distributions
-    file_string_add = 'multiplicity_distributions_test'
-    file_location = "20240409_PeakMatching_Package/sample_outputs/"
-    DB.plot_multiplicity_distributions(file_location, file_string_add)
+    #5. plot multiplicity distributions
+    if plot == True:
+        click.echo("Plotting multiplicity distributions")
+        DB.plot_multiplicity_distributions()
 
-    # 4. save results to SQL
-    DB.save_to_SQL(peak_table_name='peak_table')
+    #6. save results to SQL
+    click.echo(f"Saving peak table to SQL: {output_table}")
+    DB.save_to_SQL(peak_table_name=output_table)
 
-    # 5. close sql connection
+    #7. close sql connection
     DB.close_connection()
 
     # end timer
     t1 = time.time()
     time_elapsed = t1-t0
-    print(time_elapsed)
+    click.echo(f"Time elapsed: {time_elapsed:.2f} seconds")
 
 
 if __name__ == "__main__":
