@@ -108,7 +108,7 @@ In the first iteration of peak alignment, the pipeline first assigns PTM peptide
 
 By default, the threshold is set to 3. 
 ```
-python PeakMatching.py -s 'results/test_database.db'
+python PeakMatching.py -s 'results/test_database.db' -c 3
 ```
 
 ### Step 5. Post Alignment Editing 
