@@ -88,7 +88,7 @@ unzip sample_input.zip
 
 ### Step 1. Create output/results directory
 ```
-mkdir results
+mkdir -p results
 ```
 
 ### Step 2. Preprocessing

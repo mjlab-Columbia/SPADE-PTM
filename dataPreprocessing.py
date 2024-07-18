@@ -433,7 +433,7 @@ class SEC_Data_Manager:
         Returns:
             None (Exports the dataframe to an SQLite database.)"""
         conn = sqlite3.connect(filename)
-        self.df.to_sql(table_name, conn, index=False)
+        self.df.to_sql(table_name, conn, index=False, if_exists='replace')
         conn.close()
 
     def export_to_csv(self, filename):

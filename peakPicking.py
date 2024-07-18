@@ -164,12 +164,9 @@ class SQLitePeakPickingManager:
         Output:
             Multiplicity distributions for each sample (saved as a PDF file).
         """
-        peak_table = self.peak_table.copy()
-        peak_table_select = peak_table[[
-            'protein_id', 'sample', 'cluster', 'peak_apex']]
+        peak_table_select = self.peak_table.copy()[['protein_id', 'sample', 'cluster', 'peak_apex']]
         peak_table_select['peak_apex'] = 1
-        peak_table_summary = peak_table_select.groupby(
-            ['protein_id', 'sample', 'cluster']).sum().reset_index()
+        peak_table_summary = peak_table_select.groupby(['protein_id', 'sample', 'cluster']).sum().reset_index()
 
         for s in peak_table_summary['sample'].unique():
             peak_table_summary_s = peak_table_summary[peak_table_summary['sample'] == s]
