@@ -305,7 +305,7 @@ class SEC_Data_Manager:
             result_df_list.append(result_df)
         self.df_list = result_df_list
 
-    def combine_df_list(self, two_rep_mode=False):
+    def combine_df_list(self, average_reps=False, two_rep_mode=False):
         """Combine the dataframes from the list of samples into a single dataframe.
         
         Args:
@@ -323,6 +323,16 @@ class SEC_Data_Manager:
 
         if combined_df.columns.isin(['peptide_id']).any():
             combined_df['peptide_id'] = combined_df['peptide_id'].replace(np.nan, '0')
+
+
+        if average_reps == True:
+            print('Averaging replicates...')
+            group_cols = ['protein_id', 'peptide_id', 'sample', 'replicate', 'ptm', 'condition', 'fraction']
+            if 'peptide_id' not in combined_df.columns:
+                group_cols.remove('peptide_id')
+            combined_df['sample'] = combined_df['ptm'] + '_' + combined_df['condition']
+            combined_df['replicate'] = 'mean'
+            combined_df = combined_df.groupby(group_cols)['intensity'].mean().reset_index()
 
         self.df = combined_df
 
@@ -547,7 +557,8 @@ class SEC_Data_Manager:
 @click.option('--first_fraction', '-ff', default=0, help='The first fraction number (often SEC fractions are renumbered between standard and MS analysis).')
 @click.option('--combination_factor', '-cf', default=1, help='The factor to combine fractions (e.g. 2 for combining each two fractions).')
 @click.option('--plot_model', '-p', default=False, help='A boolean indicating whether to plot the molecular weight calibration model.')
-def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model):
+@click.option('--avg_reps', '-ar', is_flag=True, help='A boolean indicating whether to average replicates.')
+def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model, avg_reps):
     """Main function to perform SEC-MS data preprocessing."""
 
     #1. Create SEC_Data_Manager object - an object that contains all the dataframes and information
@@ -578,7 +589,7 @@ def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_ta
 
     #5. Combine all data into a single dataframe
     click.echo('Combining data...')
-    data_manager.combine_df_list() #two_rep_mode=True
+    data_manager.combine_df_list(average_reps=avg_reps) #two_rep_mode=True
 
     #6. Add gene names - readding in ensures that all common proteins have the same gene names
     click.echo('Adding gene names...')
