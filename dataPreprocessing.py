@@ -54,7 +54,7 @@ class SEC_Data_Manager:
         self.uniprot_gene_table = pd.read_csv(uniprot_gene_table)
         self.sec_table = pd.read_csv(sec_table) if sec_table is not None else None
 
-    def reshape_tmt_df(self, id_col_list, tmt_col_list):
+    def reshape_tmt_df(self, id_level_list):
         """Reshape the input dataframes based on the column nomenclature and labelling annotation.
         
         Args:
@@ -66,7 +66,7 @@ class SEC_Data_Manager:
         """
 
         #reshaping function for a single dataframe
-        def reshape_single_df(input_df, id_columns, tmt_col_name, fraction_annotation):
+        def reshape_single_df(input_df, id_level, fraction_annotation):
             """Reshape a single dataframe based on the column nomenclature and labelling annotation.
             
             Args:
@@ -78,6 +78,14 @@ class SEC_Data_Manager:
             Returns:
                 pd.DataFrame: The reshaped dataframe with additional columns for experiment, condition, replicate, fraction, and sample.
             """
+            #get columns for id_level
+            if id_level == 'prot':
+                id_columns = ['R.FileName', 'PG.UniprotIds']
+                tmt_col_name = 'PG.TMT18_'
+            else:
+                id_columns = ['R.FileName', 'PG.UniprotIds', 'PEP.StrippedSequence']
+                tmt_col_name = 'PEP.TMT18_'
+
 
             #melt df by channel
             tmt_columns = [i for i in input_df.columns if tmt_col_name in i]
@@ -109,7 +117,7 @@ class SEC_Data_Manager:
         
         result_df_list = []
         for i, df in enumerate(self.input_df_list):
-            result_df = reshape_single_df(df, id_col_list[i], tmt_col_list[i], self.labelling_annotation)
+            result_df = reshape_single_df(df, id_level_list[i], self.labelling_annotation)
             result_df_list.append(result_df)
         self.df_list = result_df_list
  
@@ -545,6 +553,7 @@ class SEC_Data_Manager:
 #click command line interface
 @click.command()
 @click.option('--input_files', '-i', multiple=True, default=['sample_input/hekhct_global_2reps_20230815.csv', 'sample_input/hekhct_phospho_2reps_20231106.csv'], help='The input file(s) containing the SEC-MS data. Default is from sample data.')
+@click.option('--input_id_level', '-iid', multiple=True, default=['prot', 'pep'], help='use prot for protein level or pep for peptide level of each input file. Default is prot, pep.')
 @click.option('--labelling_annotation', '-l', default='sample_input/TMTinfo_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The labelling annotation file for the SEC-MS data.')
 @click.option('--mix_norm_annotation', '-m', default='sample_input/TMTmixOverlap_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The mix normalization annotation file for the SEC-MS data.')
 @click.option('--uniprot_gene_table', '-u', default='sample_input/uniprotIDtoGENE_human_allGenes_20230719.csv', type=click.Path(exists=True), help='The Uniprot ID to gene name mapping table.')
@@ -558,7 +567,7 @@ class SEC_Data_Manager:
 @click.option('--combination_factor', '-cf', default=1, help='The factor to combine fractions (e.g. 2 for combining each two fractions).')
 @click.option('--plot_model', '-p', default=False, help='A boolean indicating whether to plot the molecular weight calibration model.')
 @click.option('--avg_reps', '-ar', is_flag=True, help='A boolean indicating whether to average replicates.')
-def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model, avg_reps):
+def main(input_files, input_id_level, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model, avg_reps):
     """Main function to perform SEC-MS data preprocessing."""
 
     #1. Create SEC_Data_Manager object - an object that contains all the dataframes and information
@@ -572,11 +581,8 @@ def main(input_files, labelling_annotation, mix_norm_annotation, uniprot_gene_ta
     
     #2. Reshape dataframe based on input column nomenclature 
     click.echo('Reshaping TMT data...')
-    data_manager.reshape_tmt_df([['R.FileName', 'PG.UniprotIds'], 
-                                ['R.FileName', 'PG.UniprotIds', 'PEP.StrippedSequence']], 
-                                ['PG.TMT18_', 'PEP.TMT18_'])
+    data_manager.reshape_tmt_df(input_id_level)
 
-    
     #3. Find intersect of protein groups (separated by ';') between datasets & select a single protein ID
     click.echo('Selecting protein IDs...')
     data_manager.prot_id_selection()
