@@ -24,14 +24,33 @@ class SQLitePeakMatchingManager:
         self.db_filename = db_filename
         self.db_folder_path = os.path.dirname(db_filename)
         self.conn = sqlite3.connect(db_filename)
+
+        #import and prepare peak table
         self.peak_table = pd.read_sql_query(f"SELECT * FROM {peak_table_name};", self.conn)
-        self.peak_table['prot_rep'] = self.peak_table['protein_id'] + '_' + self.peak_table['replicate']
         self.peak_table = self.peak_table.drop(columns='sample')
-        self.prot_rep = self.peak_table['prot_rep'].unique()
-        self.prot_rep_peak_df_list = [group for _, group in self.peak_table.groupby('prot_rep')]
-        self.group_cols = ['prot_rep', 'protein_id', 'genes', 'replicate']
+        combine_cols = ['protein_id', 'cluster', 'replicate']
+        group_cols = ['match_id', 'protein_id', 'genes', 'cluster', 'replicate']
+
         self.conditions = self.peak_table['condition'].unique()
         self.ptms = self.peak_table['ptm'].unique()
+        self.replicates = self.peak_table['replicate'].unique()
+
+        #split peak table into comparison groups
+        if len(self.replicates) == 1:
+            combine_cols.remove('replicate')
+            group_cols.remove('replicate')
+        
+        if '0' in self.peak_table['cluster'].values:
+            combine_cols.remove('cluster')
+            group_cols.remove('cluster')
+
+        self.peak_table['match_id'] = self.peak_table[combine_cols].astype(str).agg('_'.join, axis=1)
+        
+        self.match_id = self.peak_table['match_id'].unique()
+        self.match_df_list = [group for _, group in self.peak_table.groupby('match_id')]
+
+        self.group_cols = group_cols
+
     
     def save_to_SQL(self, df, table_name):
         """Save a DataFrame to a table in the SQLite database.
@@ -119,9 +138,10 @@ def ptm_matching(input_df):
     Returns:
         pd.DataFrame: The DataFrame containing the matched peaks (global and ptm) and their attributes.
     """
+
     #create a skeleton dataframe to ensure that all protein replicates/conditions are present in the final dataframe
     skeleton_df = pd.DataFrame(columns = input_df.columns)
-    skeleton_df[['prot_rep', 'protein_id', 'genes', 'condition', 'replicate']] = input_df[['prot_rep', 'protein_id', 'genes', 'condition', 'replicate']].drop_duplicates().reset_index(drop=True)
+    skeleton_df[group_cols+['condition']] = input_df[group_cols+['condition']].drop_duplicates().reset_index(drop=True)
 
     #split the global and ptm peaks into separate dataframes
     global_df = input_df[input_df['ptm'] == 'global'].reset_index(drop=True)
@@ -134,37 +154,47 @@ def ptm_matching(input_df):
 
     #make sure that the all ptm columns are present for each protein replicate.
     for p in ptms:
-        if p not in ptm_df['ptm'].unique():
+        if p not in ptm_df['ptm'].unique() and p != 'global':
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=FutureWarning)
                 ptm_df = pd.concat([ptm_df, skeleton_df.copy().assign(ptm=p)], ignore_index=True) #ignore this warning for now
 
     #iterate through each ptm df to merge with the global df
     ptm_df_list = [group for _, group in ptm_df.groupby('ptm')]
+
     for i in range(len(ptm_df_list)):
         #prep ptm dataframe
         ptm_df_i = ptm_df_list[i].reset_index(drop=True)
         ptm = ptm_df_i['ptm'].unique()[0]
 
         #merge global and ptm dataframes
-        group_cols = ['prot_rep', 'protein_id', 'genes', 'condition', 'replicate']
-        global_ptm_merge_i = global_df.merge(ptm_df_i, on=group_cols, how='left', suffixes=('', '_ptm'))
+        global_ptm_merge_i = global_df.merge(ptm_df_i, on=group_cols+['condition'], how='left', suffixes=('', '_ptm'))
 
         #get valid ptm matches - run evaluation function
         global_ptm_merge_i[ptm] = ptm_eval(global_ptm_merge_i, apex_diff_cutoff=threshold)
 
-        #Summarize ptm matches - fill result df with values
-        global_ptm_merge_i_summary = global_ptm_merge_i[group_cols+[ptm,'peak_apex','cluster_ptm', 'peak_id_ptm']]
-        global_ptm_merge_i_summary = global_ptm_merge_i_summary.assign(cluster_ptm = global_ptm_merge_i_summary.apply(replace_ptm_col_values, args=(ptm,'cluster_ptm',), axis=1))
-        global_ptm_merge_i_summary = global_ptm_merge_i_summary.assign(peak_id_ptm = global_ptm_merge_i_summary.apply(replace_ptm_col_values, args=(ptm,'peak_id_ptm',), axis=1))
-        global_ptm_merge_i_summary = global_ptm_merge_i_summary.groupby(group_cols+['peak_apex'], as_index=False).agg({ptm:'sum', 'cluster_ptm':lambda x: ';'.join(filter(None, x)), 'peak_id_ptm':lambda x: ';'.join(filter(None, x))})
+        if 'cluster' in group_cols:
+            global_ptm_merge_i_summary = global_ptm_merge_i[group_cols+[ptm, 'condition', 'peak_apex', 'peak_id_ptm']]
+            global_ptm_merge_i_summary = global_ptm_merge_i_summary.assign(peak_id_ptm = global_ptm_merge_i_summary.apply(replace_ptm_col_values, args=(ptm,'peak_id_ptm',), axis=1))
+            global_ptm_merge_i_summary = global_ptm_merge_i_summary.groupby(group_cols+['peak_apex', 'condition'], as_index=False).agg({ptm:'sum', 'peak_id_ptm':lambda x: ';'.join(filter(None, x))})
 
-        #merge ptm counts and clusters
-        final_global_df = global_df.merge(global_ptm_merge_i_summary, on=group_cols+['peak_apex'], how='left')
+            #merge ptm counts and clusters
+            final_global_df = global_df.merge(global_ptm_merge_i_summary, on=group_cols+['peak_apex', 'condition'], how='left')
+            final_global_df.drop(columns=['ptm'], inplace=True)
 
-        #concatenated string of cluster_ptm to the cluster column
-        final_global_df['cluster'] = final_global_df.apply(lambda x: ';'.join(filter(None, [x['cluster'], x['cluster_ptm']])), axis=1).astype(str)
-    final_global_df.drop(columns=['cluster_ptm', 'ptm'], inplace=True)
+        else:
+            #Summarize ptm matches - fill result df with values
+            global_ptm_merge_i_summary = global_ptm_merge_i[group_cols+[ptm, 'condition', 'peak_apex','cluster_ptm', 'peak_id_ptm']]
+            global_ptm_merge_i_summary = global_ptm_merge_i_summary.assign(cluster_ptm = global_ptm_merge_i_summary.apply(replace_ptm_col_values, args=(ptm,'cluster_ptm',), axis=1))
+            global_ptm_merge_i_summary = global_ptm_merge_i_summary.assign(peak_id_ptm = global_ptm_merge_i_summary.apply(replace_ptm_col_values, args=(ptm,'peak_id_ptm',), axis=1))
+            global_ptm_merge_i_summary = global_ptm_merge_i_summary.groupby(group_cols+['peak_apex', 'condition'], as_index=False).agg({ptm:'sum', 'cluster_ptm':lambda x: ';'.join(filter(None, x)), 'peak_id_ptm':lambda x: ';'.join(filter(None, x))})
+
+            #merge ptm counts and clusters
+            final_global_df = global_df.merge(global_ptm_merge_i_summary, on=group_cols+['peak_apex', 'condition'], how='left')
+
+            #concatenated string of cluster_ptm to the cluster column
+            final_global_df['cluster'] = final_global_df.apply(lambda x: ';'.join(filter(None, [x['cluster'], x['cluster_ptm']])), axis=1).astype(str)
+            final_global_df.drop(columns=['cluster_ptm', 'ptm'], inplace=True)
     return final_global_df
 
 
@@ -241,7 +271,7 @@ def peak_alignment(peak_df):
 
     #create a skeleton dataframe to ensure that all protein replicates/conditions are present in the final dataframe
     skeleton_df = pd.DataFrame(columns = peak_df.columns)
-    skeleton_df[['prot_rep', 'protein_id', 'genes', 'replicate']] = peak_df[['prot_rep', 'protein_id', 'genes', 'replicate']].drop_duplicates().reset_index(drop=True)
+    skeleton_df[group_cols] = peak_df[group_cols].drop_duplicates().reset_index(drop=True)
 
     #ensures all conditions are matched
     for c in conditions:
@@ -323,8 +353,7 @@ def matching_i(peak_table_i):
         return None
     else:
         return condition_matching(ptm_mod_table.reset_index(drop=True).reset_index(), group_cols)
-
-
+    
 #reorganize script to run with click
 @click.command()
 @click.option('--sql_db', '-s', required=True, help='SQLite database file for input and output')
@@ -339,21 +368,21 @@ def main(sql_db, cutoff, peak_table_name, align_table_name):
     #import the peak_table and define global variables
     click.echo('Importing peak table and defining global variables...')
     manager = SQLitePeakMatchingManager(sql_db, peak_table_name)
-    prot_rep_peak_df_list = manager.prot_rep_peak_df_list.copy()
+    match_df_list = manager.match_df_list.copy()
 
-    global peak_table, prot_rep, group_cols, conditions, ptms, threshold
-    peak_table, prot_rep, group_cols, conditions, ptms, threshold = manager.peak_table.copy(), manager.prot_rep.copy(), manager.group_cols.copy(), manager.conditions.copy(), manager.ptms.copy(), cutoff
+    global peak_table, match_id, group_cols, conditions, ptms, threshold
+    peak_table, match_id, group_cols, conditions, ptms, threshold = manager.peak_table.copy(), manager.match_id.copy(), manager.group_cols.copy(), manager.conditions.copy(), manager.ptms.copy(), cutoff
     manager.close_connection()
 
     #perform peak matching and alignment
     click.echo('Performing peak matching and alignment...')
-    mapped_result = map(matching_i, prot_rep_peak_df_list)
+    mapped_result = map(matching_i, match_df_list)
     clustered_global_intensity_table = pd.concat(mapped_result, ignore_index=True).reset_index(drop=True)
 
     #move all columns with 'peak' to the end using regex, and drop a few columns
     click.echo('Reorganizing columns...')
     clustered_global_intensity_table = clustered_global_intensity_table[clustered_global_intensity_table.columns.drop(list(clustered_global_intensity_table.filter(regex='peak'))).tolist() + clustered_global_intensity_table.filter(regex='peak').columns.tolist()]
-    clustered_global_intensity_table = clustered_global_intensity_table.drop(columns=['index', 'prot_rep'], axis=1).reset_index(drop=True)
+    clustered_global_intensity_table = clustered_global_intensity_table.drop(columns=['index', 'match_id'], axis=1).reset_index(drop=True)
     
     #save results to SQLite database
     click.echo('Saving results to SQLite database...')

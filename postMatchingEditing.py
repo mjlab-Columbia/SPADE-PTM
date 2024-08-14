@@ -256,8 +256,13 @@ class matchTableEditor:
 
         #apply ptm_log2fx function
         match_table_filter['ptm_height_log2fx_sum'] = match_table_filter.apply(ptm_log2fx, axis=1)
-        self.match_table = match_table.merge(match_table_filter[['protein_id', 'replicate', 'mean_peak_apex', 'ptm_height_log2fx_sum']], on=['protein_id', 'replicate', 'mean_peak_apex'], how='left')
 
+        #if cluster column values are a list then merge the tables
+        if type(match_table['cluster'][0]) == list:
+            self.match_table = match_table.merge(match_table_filter[['protein_id', 'mean_peak_apex', 'ptm_height_log2fx_sum']], on=['protein_id', 'mean_peak_apex'], how='left')
+        else:
+            self.match_table = match_table.merge(match_table_filter[['protein_id', 'cluster', 'mean_peak_apex', 'ptm_height_log2fx_sum']], on=['protein_id', 'cluster', 'mean_peak_apex'], how='left')
+    
     def other_edits(self):
         """Updates match/alignment table to move peak parameter columns to the end."""
         self.match_table = self.match_table[self.match_table.columns.drop(list(self.match_table.filter(regex='^peak', axis=1))).tolist() + self.match_table.filter(regex='^peak', axis=1).columns.tolist()]
