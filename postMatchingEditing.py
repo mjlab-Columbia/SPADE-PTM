@@ -215,7 +215,7 @@ class matchTableEditor:
 
     def add_ptm_log2fx(self):
         """Updates matched table with a column evaluating the log2fx values of the PTM peaks."""
-
+        
         def ptm_log2fx(row):
             """Function to calculate the log2 fold change of the PTM peaks.
             
@@ -223,31 +223,48 @@ class matchTableEditor:
                 row (Series): The row of the matched DataFrame.
             
             Returns:
-                log2fx (float): The log2 fold change of the PTM peaks."""
+                log2fx (float): The log2 fold change of the PTM peaks.
+                common_ptm (str): The common PTM peptides.
+                common_ptm_log2fx (str): The log2fx of each of the common PTM peptides
+            """
 
             #get peak id lists
             peak_id_ptm = row['peak_id_ptm']
             peak_id_ptm_a = peak_id_ptm[0]
             peak_id_ptm_b = peak_id_ptm[1]
 
-            #split peak id lists
-            peak_id_ptm_a_split = peak_id_ptm_a.split(';')
-            peak_id_ptm_b_split = peak_id_ptm_b.split(';')
+            #split peak id lists and convert to integers
+            peak_id_ptm_a_split = list(map(int, peak_id_ptm_a.split(';')))
+            peak_id_ptm_b_split = list(map(int, peak_id_ptm_b.split(';')))
+
+            #get ptm peak dataframes from peak_id_ptm_split lists
+            ptm_a_peak_df = peak_table[peak_table['peak_id'].isin(peak_id_ptm_a_split)]
+            ptm_b_peak_df = peak_table[peak_table['peak_id'].isin(peak_id_ptm_b_split)]
 
             #get sum of peak heights (multiple ptms may match to a single peak)
-            ptm_a_sum_height = 0
-            for i_a in peak_id_ptm_a_split:
-                ptm_a_peak_height = peak_table[peak_table['peak_id'] == int(i_a)]['peak_height'].iloc[0]
-                ptm_a_sum_height += ptm_a_peak_height
+            ptm_a_sum_height = ptm_a_peak_df['peak_height'].sum()
+            ptm_b_sum_height = ptm_b_peak_df['peak_height'].sum()
 
-            ptm_b_sum_height = 0
-            for i_b in peak_id_ptm_b_split:
-                ptm_b_peak_height = peak_table[peak_table['peak_id'] == int(i_b)]['peak_height'].iloc[0]
-                ptm_b_sum_height += ptm_b_peak_height
-
-            #calculate log2 fold change
+            #calculate total log2 fold change
             log2fx = np.log2(ptm_a_sum_height / ptm_b_sum_height)
-            return log2fx
+
+            #get common ptm peptides
+            ptm_common_peak_df = ptm_a_peak_df.merge(ptm_b_peak_df, on='cluster', how='inner', suffixes=('_a', '_b'))
+
+            if ptm_common_peak_df.shape[0] == 0:
+                common_ptm = None
+                common_ptm_log2fx = None
+            else:
+                common_ptm = ptm_common_peak_df['cluster'].tolist()
+
+                common_ptm_log2fx = np.log2(ptm_common_peak_df['peak_height_a'] / ptm_common_peak_df['peak_height_b']).tolist()
+                common_ptm_log2fx = [round(i, 4) for i in common_ptm_log2fx]
+
+                #convert to string
+                common_ptm = ';'.join(common_ptm)
+                common_ptm_log2fx = ';'.join(map(str, common_ptm_log2fx))
+
+            return log2fx, common_ptm, common_ptm_log2fx
 
         #get tables and filter match table
         peak_table = self.peak_table.copy()
@@ -255,14 +272,14 @@ class matchTableEditor:
         match_table_filter = match_table[(match_table['global_eval'] == 'Both') & (match_table['phospho_eval'] == 'Both')].copy().reset_index(drop=True)
 
         #apply ptm_log2fx function
-        match_table_filter['ptm_height_log2fx_sum'] = match_table_filter.apply(ptm_log2fx, axis=1)
+        match_table_filter[['ptm_height_log2fx_sum', 'ptm_common_pep', 'ptm_common_log2fx']] = match_table_filter.apply(ptm_log2fx, axis=1, result_type='expand')
 
         #if cluster column values are a list then merge the tables
         if type(match_table['cluster'][0]) == list:
-            self.match_table = match_table.merge(match_table_filter[['protein_id', 'mean_peak_apex', 'ptm_height_log2fx_sum']], on=['protein_id', 'mean_peak_apex'], how='left')
+            self.match_table =  match_table.merge(match_table_filter[['protein_id', 'mean_peak_apex', 'ptm_height_log2fx_sum', 'ptm_common_pep', 'ptm_common_log2fx']], on=['protein_id', 'mean_peak_apex'], how='left')
         else:
-            self.match_table = match_table.merge(match_table_filter[['protein_id', 'cluster', 'mean_peak_apex', 'ptm_height_log2fx_sum']], on=['protein_id', 'cluster', 'mean_peak_apex'], how='left')
-    
+            self.match_table =  match_table.merge(match_table_filter[['protein_id', 'cluster', 'mean_peak_apex', 'ptm_height_log2fx_sum', 'ptm_common_pep', 'ptm_common_log2fx']], on=['protein_id', 'cluster', 'mean_peak_apex'], how='left')
+
     def other_edits(self):
         """Updates match/alignment table to move peak parameter columns to the end."""
         self.match_table = self.match_table[self.match_table.columns.drop(list(self.match_table.filter(regex='^peak', axis=1))).tolist() + self.match_table.filter(regex='^peak', axis=1).columns.tolist()]

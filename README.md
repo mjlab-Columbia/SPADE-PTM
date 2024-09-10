@@ -92,9 +92,9 @@ mkdir -p results
 ```
 
 ### Step 2. Preprocessing
-The preprocessing script takes the TMT intensity tables from Spectomine and performed the following operations: (a) reshaping the data, (b) normalizing and averaging between TMT mixes, (c) median normalizing between mixes, (d) exporting to SQL database.
+The preprocessing script takes the TMT intensity tables from Spectomine and performed the following operations: (a) reshaping the data, (b) normalizing and averaging between TMT mixes, (c) median normalizing between mixes, (d) averages replicates ("-ar"), (e) exporting to SQL database.
 ```
-python dataPreprocessing.py -o 'results/test_database.db'
+python dataPreprocessing.py -o 'results/test_database.db' -ar
 ```
 
 ### Step 3. Peak Picking
