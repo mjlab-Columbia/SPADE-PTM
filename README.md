@@ -1,7 +1,7 @@
-# pyPA: a Python Peak Alignment tool
+# SPADE-PTM: SEC Protein Assembly Dynamics Evaluator - Post Translational Modifications
 
 ## Description
-The python tool pyPA (in development) was built to analyze SEC-MS proteomic data. The current iteraction of pyPA performs 4 basic functions: (a) TMT data preprocessing, (b) peak picking, (c) peak alignment between samples, and (d) additional calculations (e.g., fold-changes, peak region evaluations,...). While the current iteration of pyPA was built for the described sample data, future versions will aim to include a wider variety of data to perform peak alignment. 
+SPADE is a python tool built for analyzing SEC-MS (Size Exclusion Chromatography paired with Mass Spectrometry) data for evaluating of protein assembly state dynamics between multiple samples. The SPADE-PTM tool was built to analyze SEC-MX data - incorporating PTM (Post-Translational Modification) enriched SEC-MS data. SPADE-PTM has 4 basic functions: (a) TMT data preprocessing, (b) peak picking, (c) peak alignment between samples and PTMs, and (d) additional calculations (e.g., fold-changes, peak region evaluations,...).
 
 - [System Requirements](#system-requirements)
 - [Installation](#installation)
@@ -16,6 +16,7 @@ This package has been tested on the following systems:
 
 ### CPU
 This package has been tested with the following processors:
++ Apple M2
 + Apple M3 Max
 
 ### GPU
@@ -66,13 +67,13 @@ pip install -r requirements.txt
 ```
 
 ### Download Sample Data
-Download and unzip the sample Inputs
+Download and unzip the [Data Inputs](https://sec-mx-example-data.s3.amazonaws.com/data_input.zip)
 
 Note: if `wget` is not available, install using `brew install wget` (refer to [homebrew](https://brew.sh/)) 
 
 ```
-wget https://sec-mx-example-data.s3.amazonaws.com/sample_input.zip
-unzip sample_input.zip
+wget https://sec-mx-example-data.s3.amazonaws.com/data_input.zip
+unzip data_input.zip
 ```
 
 ## Running Sample
@@ -118,9 +119,9 @@ python postMatchingEditing.py -s 'results/test_database.db'
 ```
 ## Sample Results
 
-Download and unzip the sample Outputs to see expected results.
+Download and unzip the [Data Outputs](https://sec-mx-example-data.s3.amazonaws.com/data_outputs.zip) to see expected results.
 
 ```
-wget https://sec-mx-example-data.s3.amazonaws.com/sample_outputs.zip
+wget https://sec-mx-example-data.s3.amazonaws.com/data_outputs.zip
 unzip sample_outputs.zip
 ```
