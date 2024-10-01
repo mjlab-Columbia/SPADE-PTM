@@ -42,13 +42,13 @@ Installation Time Estimation: 5-10 minutes
 
 Clone the repository 
 ```
-git clone https://github.com/mjlab-Columbia/peak_alignment.git
+git clone https://github.com/mjlab-Columbia/SPADE-PTM.git
 ```
 
 ### Download Dependencies
 Go to repository folder
 ```
-cd peak_alignment
+cd SPADE-PTM
 ```
 #### Conda Method
 1. Download dependencies
@@ -58,7 +58,7 @@ conda env create -f environment.yaml
 
 2. Activate the environment
 ```
-conda activate peak_alignment_env
+conda activate spade_ptm
 ```
 #### Pip Method
 Download dependencies directly from requirements file 
@@ -67,7 +67,7 @@ pip install -r requirements.txt
 ```
 
 ### Download Sample Data
-Download and unzip the [Data Inputs](https://sec-mx-example-data.s3.amazonaws.com/data_input.zip)
+Download and unzip the [Data Inputs](https://sec-mx-example-data.s3.amazonaws.com/data_inputs.zip)
 
 Note: if `wget` is not available, install using `brew install wget` (refer to [homebrew](https://brew.sh/)) 
 

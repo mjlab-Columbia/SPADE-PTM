@@ -1,4 +1,4 @@
-name: peak_alignment_env
+name: spade_ptm
 channels:
   - conda-forge
 dependencies:
