@@ -13,15 +13,16 @@ SPADE is a python tool built for analyzing SEC-MS (Size Exclusion Chromatography
 ### OS
 This package has been tested on the following systems:
 + macOS: Sonoma (14.4.1)
++ Windows 11
 
 ### CPU
 This package has been tested with the following processors:
-+ Apple M2
-+ Apple M3 Max
++ Apple (Intel, M2, M3 Max)
++ Windows (Intel)
 
 ### GPU
 This package has been tested with the following memory capacities:
-+ 36 GB
++ 16-36 GB
 
 ### Software
 The package was tested with these versions
@@ -37,10 +38,13 @@ The package was tested with these versions
 ## Installation
 Note: the following steps (installation and running) are meant to be run in terminal or command line. It is recommended to open a directory with at least 1GB of space. 
 
-Installation Time Estimation: 5-10 minutes
+Installation Time Estimation: 10-30 minutes (depending on memory)
 ### Downloading the Repository
 
 Clone the repository 
+
+The repository can also be downloaded from the [GitHub](https://github.com/mjlab-Columbia/SPADE-PTM). Intalling git on Windows, refer [here](https://git-scm.com/downloads/win).
+
 ```
 git clone https://github.com/mjlab-Columbia/SPADE-PTM.git
 ```
@@ -69,11 +73,11 @@ pip install -r requirements.txt
 ### Download Sample Data
 Download and unzip the [Data Inputs](https://sec-mx-example-data.s3.amazonaws.com/data_inputs.zip)
 
-Note: if `wget` is not available, install using `brew install wget` (refer to [homebrew](https://brew.sh/)) 
+Note: if `wget` is not available, install using `brew install wget` (refer to [homebrew](https://brew.sh/)). Windows users may have difficulty using 'wget' and are recommended to use the [Data Inputs](https://sec-mx-example-data.s3.amazonaws.com/data_inputs.zip) download link.
 
 ```
-wget https://sec-mx-example-data.s3.amazonaws.com/data_input.zip
-unzip data_input.zip
+wget https://sec-mx-example-data.s3.amazonaws.com/data_inputs.zip
+unzip data_inputs.zip
 ```
 
 ## Running Sample
@@ -95,13 +99,13 @@ mkdir -p results
 ### Step 2. Preprocessing
 The preprocessing script takes the TMT intensity tables from Spectomine and performed the following operations: (a) reshaping the data, (b) normalizing and averaging between TMT mixes, (c) median normalizing between mixes, (d) averages replicates ("-ar"), (e) exporting to SQL database.
 ```
-python dataPreprocessing.py -o 'results/test_database.db' -ar
+python dataPreprocessing.py -o results/test_database.db -ar
 ```
 
 ### Step 3. Peak Picking
 The peakpicking module performs the following operations on the SQL database output from the Preprocessing step: (a) smoothing using a [linear digital filter](https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.filtfilt.html) and exporting the smoothed data, (b) peak picking from each elution profile using `scipy.signal.find_peaks` function, (c) plotting peak mutliplicity of each sample, (d) exporting result to SQL database.
 ```
-python peakPicking.py -s 'results/test_database.db' 
+python peakPicking.py -s results/test_database.db
 ```
 
 ### Step 4. Peak Alignment 
@@ -109,13 +113,13 @@ In the first iteration of peak alignment, the pipeline first assigns PTM peptide
 
 By default, the threshold is set to 3. 
 ```
-python PeakMatching.py -s 'results/test_database.db' -c 3
+python PeakMatching.py -s results/test_database.db -c 3
 ```
 
 ### Step 5. Post Alignment Editing 
 After aligning elution peaks between samples, the following operations are performed: (a) calculation of the mean elution fraction of an aligned peak, (b) calcuation of fold changes of peaks between samples, (c) molecular weight estimations and peak region categorization.
 ```
-python postMatchingEditing.py -s 'results/test_database.db'
+python postMatchingEditing.py -s results/test_database.db
 ```
 ## Sample Results
 
