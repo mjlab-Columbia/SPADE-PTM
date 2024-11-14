@@ -127,5 +127,5 @@ Download and unzip the [Data Outputs](https://sec-mx-example-data.s3.amazonaws.c
 
 ```
 wget https://sec-mx-example-data.s3.amazonaws.com/data_outputs.zip
-unzip sample_outputs.zip
+unzip data_outputs.zip
 ```
