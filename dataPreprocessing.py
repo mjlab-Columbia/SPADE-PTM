@@ -9,8 +9,7 @@ import sqlite3
 from sklearn.linear_model import LinearRegression
 from scipy.signal import filtfilt 
 import matplotlib.pyplot as plt
-
-
+import os
 
 
 #Functions
@@ -54,7 +53,7 @@ class SEC_Data_Manager:
         self.uniprot_gene_table = pd.read_csv(uniprot_gene_table)
         self.sec_table = pd.read_csv(sec_table) if sec_table is not None else None
 
-    def reshape_tmt_df(self, id_level_list):
+    def reshape_tmt_df(self, id_level_list, results_folder, phospho_export):
         """Reshape the input dataframes based on the column nomenclature and labelling annotation.
         
         Args:
@@ -66,7 +65,7 @@ class SEC_Data_Manager:
         """
 
         #reshaping function for a single dataframe
-        def reshape_single_df(input_df, id_level, fraction_annotation):
+        def reshape_single_df(input_df, id_level, fraction_annotation, phospho_annotation=False):
             """Reshape a single dataframe based on the column nomenclature and labelling annotation.
             
             Args:
@@ -86,6 +85,9 @@ class SEC_Data_Manager:
                 id_columns = ['R.FileName', 'PG.UniprotIds', 'PEP.StrippedSequence']
                 tmt_col_name = 'PEP.TMT18_'
 
+            if phospho_annotation == True:
+                id_columns = ['R.FileName', 'PG.UniprotIds', 'PG.Genes', 'PEP.StrippedSequence', 'PP.Phospho (STY)']
+                tmt_col_name = 'PEP.TMT18_'
 
             #melt df by channel
             tmt_columns = [i for i in input_df.columns if tmt_col_name in i]
@@ -108,7 +110,12 @@ class SEC_Data_Manager:
             input_df_fraction = input_df_melt.merge(fraction_annotation, how="left") #, left_on=['mix', 'channel'], right_on=['mix', 'channels']
             input_df_fraction['sample'] = input_df_fraction['ptm'] + '_' + input_df_fraction['replicate'] + '_' + input_df_fraction['condition'] 
             input_df_fraction = input_df_fraction[~pd.isnull(input_df_fraction['intensity'])].drop_duplicates(keep='first', ignore_index=True)
-            input_df_fraction = input_df_fraction.rename(columns={'PG.UniprotIds':'protein_id'})
+
+            if phospho_annotation == True:
+                input_df_fraction = input_df_fraction.rename(columns={'PG.UniprotIds':'protein_id', 'PG.Genes':'gene', 'PEP.StrippedSequence':'peptide_id', 'PP.Phospho (STY)':'ptm_sites'})
+                input_df_fraction = input_df_fraction.drop(columns=['channel', 'mix', 'intensity', 'ptm', 'fraction']).drop_duplicates(keep='first', ignore_index=True)
+            else:
+                input_df_fraction = input_df_fraction.rename(columns={'PG.UniprotIds':'protein_id'})
 
             if 'PEP.StrippedSequence' in input_df_fraction.columns:
                 input_df_fraction = input_df_fraction.rename(columns={'PEP.StrippedSequence':'peptide_id'})
@@ -116,10 +123,22 @@ class SEC_Data_Manager:
             return input_df_fraction
         
         result_df_list = []
+        phospho_annotation_list = []
         for i, df in enumerate(self.input_df_list):
             result_df = reshape_single_df(df, id_level_list[i], self.labelling_annotation)
             result_df_list.append(result_df)
+
+            if result_df[result_df['ptm'] == 'phospho'].shape[0] > 0:
+                phospho_annotation_df = reshape_single_df(df, id_level_list[i], self.labelling_annotation, True)
+                phospho_annotation_list.append(phospho_annotation_df)
         self.df_list = result_df_list
+
+        if len(phospho_annotation_list) > 0:
+            self.phospho_annotation = phospho_annotation_list
+
+            #concatenate phospho annotation and export as a csv
+            phospho_annotation_df = pd.concat(phospho_annotation_list)
+            phospho_annotation_df.to_csv(results_folder+'/phospho_annotation_table.csv', index=False)
  
     def prot_id_selection(self, sep=';'):
         """Select a single protein ID from the protein groups based on the intersection of protein IDs between datasets.
@@ -552,12 +571,12 @@ class SEC_Data_Manager:
 ##Begin data processing##
 #click command line interface
 @click.command()
-@click.option('--input_files', '-i', multiple=True, default=['sample_input/hekhct_global_2reps_20230815.csv', 'sample_input/hekhct_phospho_2reps_20231106.csv'], help='The input file(s) containing the SEC-MS data. Default is from sample data.')
+@click.option('--input_files', '-i', multiple=True, default=['data_inputs/hekhct_global_2reps_20230815.csv', 'data_inputs/hekhct_phospho_2reps_20231106.csv'], help='The input file(s) containing the SEC-MS data. Default is from sample data.')
 @click.option('--input_id_level', '-iid', multiple=True, default=['prot', 'pep'], help='use prot for protein level or pep for peptide level of each input file. Default is prot, pep.')
-@click.option('--labelling_annotation', '-l', default='sample_input/TMTinfo_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The labelling annotation file for the SEC-MS data.')
-@click.option('--mix_norm_annotation', '-m', default='sample_input/TMTmixOverlap_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The mix normalization annotation file for the SEC-MS data.')
-@click.option('--uniprot_gene_table', '-u', default='sample_input/uniprotIDtoGENE_human_allGenes_20230719.csv', type=click.Path(exists=True), help='The Uniprot ID to gene name mapping table.')
-@click.option('--sec_table', '-s', default='sample_input/SEC_MW_input_hekhct.txt', type=click.Path(exists=True), help='The SEC molecular weight calibration table.')
+@click.option('--labelling_annotation', '-l', default='data_inputs/TMTinfo_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The labelling annotation file for the SEC-MS data.')
+@click.option('--mix_norm_annotation', '-m', default='data_inputs/TMTmixOverlap_HEKHCT_TMT18.txt', type=click.Path(exists=True), help='The mix normalization annotation file for the SEC-MS data.')
+@click.option('--uniprot_gene_table', '-u', default='data_inputs/uniprotIDtoGENE_human_allGenes_20230719.csv', type=click.Path(exists=True), help='The Uniprot ID to gene name mapping table.')
+@click.option('--sec_table', '-s', default='data_inputs/SEC_MW_input_hekhct.txt', type=click.Path(exists=True), help='The SEC molecular weight calibration table.')
 @click.option('--output_sql', '-o', required=True, help='The output file for the processed SEC-MS data.')
 @click.option('--output_csv', '-c', default=None, help='The output file for the processed SEC-MS data.')
 @click.option('--output_intensity', '-int', default=None, help='The output file for the intensity table compatible with SECAT.')
@@ -567,7 +586,8 @@ class SEC_Data_Manager:
 @click.option('--combination_factor', '-cf', default=1, help='The factor to combine fractions (e.g. 2 for combining each two fractions).')
 @click.option('--plot_model', '-p', default=False, help='A boolean indicating whether to plot the molecular weight calibration model.')
 @click.option('--avg_reps', '-ar', is_flag=True, help='A boolean indicating whether to average replicates.')
-def main(input_files, input_id_level, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model, avg_reps):
+@click.option('--phospho_export', '-pe', is_flag=True, help='A boolean indicating whether to export a phospho annotation file.')
+def main(input_files, input_id_level, labelling_annotation, mix_norm_annotation, uniprot_gene_table, sec_table, output_sql, output_csv, output_intensity, output_sec, fraction_col, first_fraction, combination_factor, plot_model, avg_reps, phospho_export):
     """Main function to perform SEC-MS data preprocessing."""
 
     #1. Create SEC_Data_Manager object - an object that contains all the dataframes and information
@@ -581,7 +601,8 @@ def main(input_files, input_id_level, labelling_annotation, mix_norm_annotation,
     
     #2. Reshape dataframe based on input column nomenclature 
     click.echo('Reshaping TMT data...')
-    data_manager.reshape_tmt_df(input_id_level)
+    results_folder = os.path.dirname(output_sql)
+    data_manager.reshape_tmt_df(input_id_level, results_folder, phospho_export)
 
     #3. Find intersect of protein groups (separated by ';') between datasets & select a single protein ID
     click.echo('Selecting protein IDs...')

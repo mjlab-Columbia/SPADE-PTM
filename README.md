@@ -43,7 +43,7 @@ Installation Time Estimation: 10-30 minutes (depending on memory)
 
 Clone the repository 
 
-The repository can also be downloaded from the [GitHub](https://github.com/mjlab-Columbia/SPADE-PTM). Intalling git on Windows, refer [here](https://git-scm.com/downloads/win).
+The repository can also be downloaded from the [GitHub](https://github.com/mjlab-Columbia/SPADE-PTM). Installing git on Windows, refer [here](https://git-scm.com/downloads/win).
 
 ```
 git clone https://github.com/mjlab-Columbia/SPADE-PTM.git
