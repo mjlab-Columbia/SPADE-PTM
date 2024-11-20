@@ -98,6 +98,8 @@ mkdir -p results
 
 ### Step 2. Preprocessing
 The preprocessing script takes the TMT intensity tables from Spectomine and performed the following operations: (a) reshaping the data, (b) normalizing and averaging between TMT mixes, (c) median normalizing between mixes, (d) averages replicates ("-ar"), (e) exporting to SQL database.
+
+Note: add the additional arguments `-iid pep -iid pep` to perform analysis on the peptide level. 
 ```
 python dataPreprocessing.py -o results/test_database.db -ar
 ```
