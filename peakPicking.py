@@ -150,6 +150,7 @@ class SQLitePeakPickingManager:
 
         df_expanded.index = df_expanded.index.set_names(['peak_id'])
         df_expanded = df_expanded.reset_index()
+        df_expanded['peak_apex'] = df_expanded['peak_apex'].astype(int) + 1 #for fraction indexing
 
         self.peak_table = df_expanded
         return df_expanded
