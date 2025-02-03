@@ -131,3 +131,14 @@ Download and unzip the [Data Outputs](https://sec-mx-example-data.s3.amazonaws.c
 wget https://sec-mx-example-data.s3.amazonaws.com/data_outputs.zip
 unzip data_outputs.zip
 ```
+
+
+## Citation
+
+Ella Doron-Mandel, Benjamin J. Bokor, Yanzhe Ma, Lena A. Street, Lauren C. Tang, Ahmed A. Abdou, Neel H. Shah, George Rosenberger & Marko Jovanovic 
+
+SEC-MX: an approach to systematically study the interplay between protein assembly states and phosphorylation.
+
+Nature Communications volume 16, Article number: 1176 (2025)
+
+[https://doi.org/10.1038/s41467-025-56303-0](https://doi.org/10.1038/s41467-025-56303-0)
